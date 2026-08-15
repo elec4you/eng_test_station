@@ -735,18 +735,34 @@ const audioPass = new Audio('https://actions.google.com/sounds/v1/cartoon/clown_
 const audioFail = new Audio('https://actions.google.com/sounds/v1/cartoon/slip_and_crash.ogg'); 
 const cheatAudio = new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg'); // เสียงเตือน Anti-Cheat
 
-const firebaseConfig = {
-    apiKey: "AIzaSyBK9hqf4TBb_ISgEtE5Qu4AjmGHZ5zhShk",
-    authDomain: "engteststation.firebaseapp.com",
-    databaseURL: "https://engteststation-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "engteststation",
-    storageBucket: "engteststation.firebasestorage.app",
-    messagingSenderId: "719237352141",
-    appId: "1:719237352141:web:04359357c9646c5bcd3784"
-};
+// URL ที่ได้จากการ Deploy Google Apps Script ในขั้นตอนที่ 1
+const FIREBASE_CONFIG_URL = "https://script.google.com/macros/s/AKfycbxz5Rfjx7TqbNgu0TqTTeNtJpQZTl6QY1KWUBdKfSnjv5MFKnxgO2jjYfk2J3s7vibkFw/exec";
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+// สร้างตัวแปร Global สำหรับ Firebase Database เพื่อให้ฟังก์ชันอื่นเรียกใช้ได้
+let db;
+
+async function initFirebase() {
+    try {
+        const response = await fetch(FIREBASE_CONFIG_URL);
+        const firebaseConfig = await response.json();
+        
+        // กำหนดค่าเริ่มต้นให้กับ Firebase หลังจากดึง Config มาได้
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.database();
+        console.log("Firebase initialized successfully via GAS.");
+        
+        // ย้ายการเรียกฟังก์ชัน Monitor ต่างๆ มาไว้ในนี้ 
+        // เพื่อให้แน่ใจว่า Firebase พร้อมใช้งานแล้ว
+        monitorMaintenance(); 
+        monitorAdminSettings(); 
+        monitorMachine(); 
+        monitorStock(); 
+        monitorRewards();
+    } catch (error) {
+        console.error("Error fetching Firebase config:", error);
+        alert("ไม่สามารถเชื่อมต่อระบบฐานข้อมูลได้ กรุณาลองรีเฟรชหน้าจอ");
+    }
+}
 
 let masterQuestions = []; 
 let questions = [];       
@@ -1065,9 +1081,13 @@ function confirmInitialLevel() {
 }
 
 window.onload = async () => {
+    // 1. เริ่มต้น Firebase ผ่าน GAS ก่อน
+    await initFirebase();
+
+    // 2. โค้ดเดิมที่เหลือเกี่ยวกับการจัดการ SpeechRecognition...
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        alert("เบราว์เซอร์ของคุณไม่รองรับระบบแยกแยะเสียง กรุณาเปิดด้วย Google Chrome");
+        alert("เบราว์เซอร์ของคุณไม่รองรับระบบแยกแยะเสียง กรุณาเปิดด้วย Google Chrome หรือ Safari");
         return;
     }
 
@@ -1157,12 +1177,7 @@ window.onload = async () => {
     };
 
     setupMobileAdminTrigger();
-    monitorMaintenance(); 
-    monitorAdminSettings(); 
     showInitialPopup(); 
-    monitorMachine(); 
-    monitorStock(); 
-    monitorRewards(); 
 };
 
 // ==========================================
