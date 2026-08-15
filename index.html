@@ -32,9 +32,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Prompt:wght@300;400;500;700&display=swap" rel="stylesheet">
 
-<!-- นำเข้า Firebase SDK -->
+<!-- นำเข้า Firebase SDK (เพิ่ม Auth) -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script> <!-- ✨ เพิ่มบรรทัดนี้ -->
 
 <style>
 :root {
@@ -553,9 +554,10 @@ input:checked + .slider:before { transform: translateX(21px); }
         <div class="modal-title">⚙️ Admin Panel</div>
 
         <div id="adminLoginGroup" class="admin-login-group">
+            <input type="email" id="adminEmail" class="admin-input" placeholder="Admin Email" value="admin@elec1teach.com">
             <input type="password" id="adminPassword" class="admin-input" placeholder="Enter Password">
             <button class="admin-btn-action" onclick="verifyAdmin()">Login</button>
-            <p id="adminError" style="color:var(--red); font-size:14px; display:none; margin-top:10px;">รหัสผ่านไม่ถูกต้อง!</p>
+            <p id="adminError" style="color:var(--red); font-size:14px; display:none; margin-top:10px;">อีเมลหรือรหัสผ่านไม่ถูกต้อง!</p>
         </div>
 
         <div id="adminControlGroup" class="admin-control-group">
@@ -726,7 +728,6 @@ input:checked + .slider:before { transform: translateX(21px); }
 
 <script>
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyoo5FbqReEwFxYecwWZANl65I2u45wUZ0oq5MRl162mscLZRK7CZ1p22nt3CQP86_W/exec";
-const ADMIN_PASSWORD = "1234"; 
 const GAS_QUESTION_URL = "https://script.google.com/macros/s/AKfycbyoo5FbqReEwFxYecwWZANl65I2u45wUZ0oq5MRl162mscLZRK7CZ1p22nt3CQP86_W/exec";
 
 // Audio objects
@@ -1594,15 +1595,32 @@ function setAdminForcedLevel() {
     db.ref('machine/config/forcedLevel').set(val);
 }
 
+// 🔄 ฟังก์ชันได้รับการปรับปรุงสำหรับ Firebase Auth
 function verifyAdmin() {
-    if(document.getElementById("adminPassword").value === ADMIN_PASSWORD) {
-        isAdminLoggedIn = true;
-        document.getElementById("adminError").style.display = "none";
-        document.getElementById("adminLoginGroup").style.display = "none";
-        document.getElementById("adminControlGroup").style.display = "block";
-    } else {
-        document.getElementById("adminError").style.display = "block";
+    const email = document.getElementById("adminEmail").value.trim();
+    const password = document.getElementById("adminPassword").value;
+    const errorText = document.getElementById("adminError");
+
+    if (!email || !password) {
+        errorText.style.display = "block";
+        errorText.innerText = "กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน";
+        return;
     }
+
+    firebase.auth().signInWithEmailAndPassword(email, password)
+        .then((userCredential) => {
+            // ล็อกอินสำเร็จ
+            isAdminLoggedIn = true;
+            document.getElementById("adminLoginGroup").style.display = "none";
+            document.getElementById("adminControlGroup").style.display = "block";
+            errorText.style.display = "none";
+            console.log("[Admin] Logged in successfully as:", userCredential.user.email);
+        })
+        .catch((error) => {
+            console.error("[Admin Auth Error]:", error.message);
+            errorText.style.display = "block";
+            errorText.innerText = "อีเมลหรือรหัสผ่านไม่ถูกต้อง!";
+        });
 }
 
 function openAdminModal() { 
