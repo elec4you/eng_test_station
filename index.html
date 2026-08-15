@@ -32,10 +32,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Prompt:wght@300;400;500;700&display=swap" rel="stylesheet">
 
-<!-- นำเข้า Firebase SDK (เพิ่ม Auth) -->
+<!-- นำเข้า Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script> <!-- ✨ เพิ่มบรรทัดนี้ -->
 
 <style>
 :root {
@@ -554,10 +553,9 @@ input:checked + .slider:before { transform: translateX(21px); }
         <div class="modal-title">⚙️ Admin Panel</div>
 
         <div id="adminLoginGroup" class="admin-login-group">
-            <input type="email" id="adminEmail" class="admin-input" placeholder="Admin Email" value="admin@elec1teach.com">
             <input type="password" id="adminPassword" class="admin-input" placeholder="Enter Password">
             <button class="admin-btn-action" onclick="verifyAdmin()">Login</button>
-            <p id="adminError" style="color:var(--red); font-size:14px; display:none; margin-top:10px;">อีเมลหรือรหัสผ่านไม่ถูกต้อง!</p>
+            <p id="adminError" style="color:var(--red); font-size:14px; display:none; margin-top:10px;">รหัสผ่านไม่ถูกต้อง!</p>
         </div>
 
         <div id="adminControlGroup" class="admin-control-group">
@@ -728,6 +726,7 @@ input:checked + .slider:before { transform: translateX(21px); }
 
 <script>
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyoo5FbqReEwFxYecwWZANl65I2u45wUZ0oq5MRl162mscLZRK7CZ1p22nt3CQP86_W/exec";
+const ADMIN_PASSWORD = "1234"; 
 const GAS_QUESTION_URL = "https://script.google.com/macros/s/AKfycbyoo5FbqReEwFxYecwWZANl65I2u45wUZ0oq5MRl162mscLZRK7CZ1p22nt3CQP86_W/exec";
 
 // Audio objects
@@ -736,34 +735,18 @@ const audioPass = new Audio('https://actions.google.com/sounds/v1/cartoon/clown_
 const audioFail = new Audio('https://actions.google.com/sounds/v1/cartoon/slip_and_crash.ogg'); 
 const cheatAudio = new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg'); // เสียงเตือน Anti-Cheat
 
-// URL ที่ได้จากการ Deploy Google Apps Script ในขั้นตอนที่ 1
-const FIREBASE_CONFIG_URL = "https://script.google.com/macros/s/AKfycbxz5Rfjx7TqbNgu0TqTTeNtJpQZTl6QY1KWUBdKfSnjv5MFKnxgO2jjYfk2J3s7vibkFw/exec";
+const firebaseConfig = {
+    apiKey: "AIzaSyBK9hqf4TBb_ISgEtE5Qu4AjmGHZ5zhShk",
+    authDomain: "engteststation.firebaseapp.com",
+    databaseURL: "https://engteststation-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "engteststation",
+    storageBucket: "engteststation.firebasestorage.app",
+    messagingSenderId: "719237352141",
+    appId: "1:719237352141:web:04359357c9646c5bcd3784"
+};
 
-// สร้างตัวแปร Global สำหรับ Firebase Database เพื่อให้ฟังก์ชันอื่นเรียกใช้ได้
-let db;
-
-async function initFirebase() {
-    try {
-        const response = await fetch(FIREBASE_CONFIG_URL);
-        const firebaseConfig = await response.json();
-        
-        // กำหนดค่าเริ่มต้นให้กับ Firebase หลังจากดึง Config มาได้
-        firebase.initializeApp(firebaseConfig);
-        db = firebase.database();
-        console.log("Firebase initialized successfully via GAS.");
-        
-        // ย้ายการเรียกฟังก์ชัน Monitor ต่างๆ มาไว้ในนี้ 
-        // เพื่อให้แน่ใจว่า Firebase พร้อมใช้งานแล้ว
-        monitorMaintenance(); 
-        monitorAdminSettings(); 
-        monitorMachine(); 
-        monitorStock(); 
-        monitorRewards();
-    } catch (error) {
-        console.error("Error fetching Firebase config:", error);
-        alert("ไม่สามารถเชื่อมต่อระบบฐานข้อมูลได้ กรุณาลองรีเฟรชหน้าจอ");
-    }
-}
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
 let masterQuestions = []; 
 let questions = [];       
@@ -1082,13 +1065,9 @@ function confirmInitialLevel() {
 }
 
 window.onload = async () => {
-    // 1. เริ่มต้น Firebase ผ่าน GAS ก่อน
-    await initFirebase();
-
-    // 2. โค้ดเดิมที่เหลือเกี่ยวกับการจัดการ SpeechRecognition...
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        alert("เบราว์เซอร์ของคุณไม่รองรับระบบแยกแยะเสียง กรุณาเปิดด้วย Google Chrome หรือ Safari");
+        alert("เบราว์เซอร์ของคุณไม่รองรับระบบแยกแยะเสียง กรุณาเปิดด้วย Google Chrome");
         return;
     }
 
@@ -1178,7 +1157,12 @@ window.onload = async () => {
     };
 
     setupMobileAdminTrigger();
+    monitorMaintenance(); 
+    monitorAdminSettings(); 
     showInitialPopup(); 
+    monitorMachine(); 
+    monitorStock(); 
+    monitorRewards(); 
 };
 
 // ==========================================
@@ -1595,32 +1579,15 @@ function setAdminForcedLevel() {
     db.ref('machine/config/forcedLevel').set(val);
 }
 
-// 🔄 ฟังก์ชันได้รับการปรับปรุงสำหรับ Firebase Auth
 function verifyAdmin() {
-    const email = document.getElementById("adminEmail").value.trim();
-    const password = document.getElementById("adminPassword").value;
-    const errorText = document.getElementById("adminError");
-
-    if (!email || !password) {
-        errorText.style.display = "block";
-        errorText.innerText = "กรุณากรอกอีเมลและรหัสผ่านให้ครบถ้วน";
-        return;
+    if(document.getElementById("adminPassword").value === ADMIN_PASSWORD) {
+        isAdminLoggedIn = true;
+        document.getElementById("adminError").style.display = "none";
+        document.getElementById("adminLoginGroup").style.display = "none";
+        document.getElementById("adminControlGroup").style.display = "block";
+    } else {
+        document.getElementById("adminError").style.display = "block";
     }
-
-    firebase.auth().signInWithEmailAndPassword(email, password)
-        .then((userCredential) => {
-            // ล็อกอินสำเร็จ
-            isAdminLoggedIn = true;
-            document.getElementById("adminLoginGroup").style.display = "none";
-            document.getElementById("adminControlGroup").style.display = "block";
-            errorText.style.display = "none";
-            console.log("[Admin] Logged in successfully as:", userCredential.user.email);
-        })
-        .catch((error) => {
-            console.error("[Admin Auth Error]:", error.message);
-            errorText.style.display = "block";
-            errorText.innerText = "อีเมลหรือรหัสผ่านไม่ถูกต้อง!";
-        });
 }
 
 function openAdminModal() { 
