@@ -1546,22 +1546,22 @@ function monitorMachine() {
 
 function monitorStock() {
     db.ref('machine/stock').on('value', snap => {
-        const stock = snap.val();
-        if(stock) {
-            currentStock.slot1 = stock.slot1 || 0;
-            currentStock.slot2 = stock.slot2 || 0;
-            document.getElementById("slot1StockUI").innerText = currentStock.slot1;
-            document.getElementById("slot2StockUI").innerText = currentStock.slot2;
-            document.getElementById("rewardStock1UI").innerText = currentStock.slot1;
-            document.getElementById("rewardStock2UI").innerText = currentStock.slot2;
-        }
+        const stock = snap.val() || {};
+        currentStock.slot1 = Number(stock.slot1) || 0;
+        currentStock.slot2 = Number(stock.slot2) || 0;
+        document.getElementById("slot1StockUI").innerText = currentStock.slot1;
+        document.getElementById("slot2StockUI").innerText = currentStock.slot2;
+        document.getElementById("rewardStock1UI").innerText = currentStock.slot1;
+        document.getElementById("rewardStock2UI").innerText = currentStock.slot2;
     });
 }
 
 function updateStock(slot, amount) {
-    let newVal = currentStock[slot] + amount;
-    if(newVal < 0) newVal = 0;
-    db.ref(`machine/stock/${slot}`).set(newVal);
+    // ใช้ transaction: บวก/ลบจากค่าล่าสุดบนเซิร์ฟเวอร์เสมอ ไม่ทับกับตู้ที่เพิ่งจ่ายรางวัล
+    db.ref(`machine/stock/${slot}`).transaction(cur => {
+        const v = (Number(cur) || 0) + amount;
+        return v < 0 ? 0 : v;
+    }).catch(err => alert("❌ ปรับสต๊อกไม่สำเร็จ: " + err));
 }
 
 function setSystemStatus(status) {
