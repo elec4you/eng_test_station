@@ -431,7 +431,7 @@ input:checked + .slider:before { transform: translateX(21px); }
     <!-- 📚 LEVEL SELECTOR -->
     <div class="level-box glass" id="userLevelContainer">
         <div style="font-size: 14px; color: var(--muted); margin-bottom: 8px; font-weight: bold;">📚 เลือกระดับคลังข้อสอบที่ต้องการทดสอบ</div>
-        <select id="userLevel" onchange="prepareQuestions()">
+        <select id="userLevel" onchange="onLevelChange()">
             <option value="Primary">ประถมศึกษา (Primary)</option>
             <option value="Secondary">มัธยมศึกษา (Secondary)</option>
             <option value="Vocational" selected>อาชีวศึกษา (Vocational)</option>
@@ -839,7 +839,8 @@ function triggerAntiCheat() {
     // ปิด Flag เพื่อไม่ให้ Trigger ซ้ำซ้อนตอนหน่วงเวลา
     isTestingPhase = false; 
     
-    setTimeout(() => {
+    clearTimeout(nextQuestionTimer);
+    nextQuestionTimer = setTimeout(() => {
         nextQuestion();
     }, 2500); // หน่วงเวลาให้ User อ่านคำเตือนนิดนึงก่อนกระโดดข้ามข้อ
 }
@@ -1323,11 +1324,48 @@ function unlockStudentName(clearField) {
     if (clearField) input.value = "";
 }
 
-function selectUserMode(mode) {
-    if (isRunning || isTestRunning) {
-        alert("⚠️ กรุณารอให้จบการทดสอบหรือฝึกซ้อมรอบปัจจุบันก่อนเปลี่ยนโหมดครับ");
+// ยกเลิกกิจกรรมที่กำลังทำอยู่ทั้งหมด (ตัวจับเวลา, ไมค์, เสียงอ่าน) เพื่อให้สลับโหมด/ระดับได้ทันที
+function abortCurrentSession() {
+    clearInterval(displayInterval);
+    clearInterval(speechCountdownInterval);
+    clearTimeout(nextQuestionTimer);
+    clearTimeout(startMicDelayTimeout);
+    clearTimeout(questionTimeout);
+    stopSentenceAudio();
+
+    // ตั้ง isRunning = false ก่อนสั่งหยุดไมค์ เพื่อไม่ให้ onend/onerror นับเป็นข้อที่ตก
+    const wasRunning = isRunning;
+    isRunning = false;
+    isTestingPhase = false;
+    if (wasRunning && recognition) {
+        try { recognition.abort ? recognition.abort() : recognition.stop(); } catch (e) {}
+    }
+    document.getElementById("cheatModal").style.display = "none";
+}
+
+// ถามยืนยันเฉพาะกรณีที่กำลังสอบรับรางวัลและทำไปแล้วอย่างน้อย 1 ข้อ (กันเผลอกดจนเสียสิทธิ์รับ OTP)
+function confirmAbandonRound() {
+    const midRewardRound = !adminConfig.cancelRequirement && isTestRunning &&
+                           (currentQuestion > 0 || isRunning || isTestingPhase);
+    if (!midRewardRound) return true;
+    return confirm("⚠️ คุณกำลังทดสอบรับรางวัลอยู่\nหากเปลี่ยนตอนนี้ คะแนนรอบนี้จะถูกยกเลิก\n\nต้องการเปลี่ยนต่อหรือไม่?");
+}
+
+function onLevelChange() {
+    if (!confirmAbandonRound()) {
+        // คืนค่าระดับเดิมในช่องเลือก
+        const sel = document.getElementById("userLevel");
+        if (questions.length > 0 && questions[0].level) sel.value = questions[0].level;
         return;
     }
+    prepareQuestions();
+}
+
+function selectUserMode(mode) {
+    const wantPractice = (mode === 'practice');
+    if (wantPractice === adminConfig.cancelRequirement) return;   // เลือกโหมดเดิมซ้ำ ไม่ต้องทำอะไร
+
+    if (!confirmAbandonRound()) return;
 
     const btnReward = document.getElementById("modeRewardBtn");
     const btnPractice = document.getElementById("modePracticeBtn");
@@ -1343,7 +1381,8 @@ function selectUserMode(mode) {
     }
     updateNameFieldForMode();
 
-    if (questions.length > 0) prepareQuestions();
+    abortCurrentSession();   // หยุดของเดิมทันที แล้วเริ่มชุดข้อสอบใหม่ตามโหมดที่เลือก
+    if (masterQuestions.length > 0) prepareQuestions();
 }
 
 function openRankModal() {
@@ -1594,6 +1633,8 @@ function pickBalanced(list, count) {
 function prepareQuestions() {
     if (masterQuestions.length === 0) return;
 
+    abortCurrentSession();   // กัน timer/ไมค์ของรอบเก่าค้างมากระทบชุดข้อสอบใหม่
+
     isTestRunning = true;
     isTestingPhase = false; // ยังไม่เข้าหน้าคำถาม
     unlockStudentName(false); // เริ่มรอบใหม่ ปลดล็อกช่องชื่อ
@@ -1820,13 +1861,32 @@ function closeAdminModal() {
 function playPassSound() { audioPass.play().catch(e=>console.log(e)); }
 function playFailSound() { audioFail.play().catch(e=>console.log(e)); }
 
+// ความเร็วเสียงอ่าน (0.1 - 2.0, ค่าปกติ = 1.0) ปรับให้ช้าลงเหมาะกับผู้เรียนที่พื้นฐานอ่อน
+const TTS_RATE = 0.6;
+const TTS_PITCH = 1.0;
+
+function pickEnglishVoice() {
+    const voices = window.speechSynthesis.getVoices() || [];
+    // เลือกเสียง en-US ก่อน (เสียงสำเนียงอเมริกันชัดเจนสำหรับผู้เรียน) ไม่มีค่อยใช้ภาษาอังกฤษอื่น
+    return voices.find(v => v.lang === 'en-US') ||
+           voices.find(v => v.lang && v.lang.toLowerCase().startsWith('en')) ||
+           null;
+}
+
 function playSentenceAudio() {
     if(questions[currentQuestion]) {
+        window.speechSynthesis.cancel();   // กดซ้ำแล้วเริ่มใหม่ ไม่ต่อคิวเสียงซ้อน
         const utter = new SpeechSynthesisUtterance(questions[currentQuestion].english);
         utter.lang = 'en-US';
+        utter.rate = TTS_RATE;
+        utter.pitch = TTS_PITCH;
+        const v = pickEnglishVoice();
+        if (v) utter.voice = v;
         window.speechSynthesis.speak(utter);
     }
 }
+// บางเบราว์เซอร์โหลดรายชื่อเสียงช้า เรียกครั้งแรกเพื่อให้พร้อมใช้งาน
+if (window.speechSynthesis) { window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices(); }
 function stopSentenceAudio() { window.speechSynthesis.cancel(); }
 
 // 🔄 อัปเดตฟังก์ชัน evaluateFinalResult: ยกเลิกการเริ่มใหม่เอง ปล่อย OTP ค้างหน้าจอ
