@@ -966,6 +966,8 @@ function startRecognition() {
     const currentSentence = questions[currentQuestion].english;
     const timing = calculateDynamicTime(currentSentence);
 
+    markQuestionAsked(questions[currentQuestion]);   // จำไว้ว่าข้อนี้ถูกถามแล้ว รอบหน้าจะไม่สุ่มซ้ำ
+
     // เปิด Flag การทำข้อสอบ เพื่อให้ระบบ Anti-Cheat เริ่มตรวจสอบ
     isTestingPhase = true;
 
@@ -1475,6 +1477,120 @@ async function fetchQuestionsFromGAS() {
     }
 }
 
+// ==========================================
+// 🎲 ระบบสุ่มข้อสอบแบบไม่ซ้ำข้ามรอบ (Non-repeating Random Picker)
+// ==========================================
+// เดิมใช้ sort(() => 0.5 - Math.random()) ซึ่งสุ่มไม่เป็นธรรม (ข้อที่อยู่ต้นชีตมีโอกาสถูกเลือกสูงกว่า)
+// และไม่จำว่ารอบก่อนถามอะไรไปแล้ว จึงเจอข้อซ้ำบ่อย
+const ASKED_HISTORY_PREFIX = "askedQuestions_v1_";
+
+// ตัวเลขสุ่มคุณภาพสูง (crypto) ช่วง 0..max-1
+function secureRandInt(max) {
+    if (max <= 1) return 0;
+    try {
+        const buf = new Uint32Array(1);
+        const limit = Math.floor(0x100000000 / max) * max;   // กัน modulo bias
+        let x;
+        do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= limit);
+        return x % max;
+    } catch (e) {
+        return Math.floor(Math.random() * max);
+    }
+}
+
+// Fisher-Yates shuffle (คืนอาร์เรย์ใหม่ ไม่แก้ของเดิม)
+function shuffleArray(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = secureRandInt(i + 1);
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+function questionKey(q) {
+    return String((q && q.english) || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function loadAskedSet(level) {
+    try {
+        const raw = localStorage.getItem(ASKED_HISTORY_PREFIX + level);
+        return new Set(raw ? JSON.parse(raw) : []);
+    } catch (e) { return new Set(); }
+}
+
+function saveAskedSet(level, set) {
+    try { localStorage.setItem(ASKED_HISTORY_PREFIX + level, JSON.stringify(Array.from(set))); } catch (e) {}
+}
+
+// บันทึกว่าข้อนี้ถูกถามแล้ว (เรียกตอนผู้ใช้เริ่มพูดจริง ไม่ใช่ตอนสุ่มชุดข้อสอบ
+// เพื่อไม่ให้การเปลี่ยนระดับ/โหมด/ตั้งค่า Admin ทำให้ข้อสอบ "หมดฟรี")
+function markQuestionAsked(q) {
+    if (!q) return;
+    const level = q.level || "General";
+    const set = loadAskedSet(level);
+    set.add(questionKey(q));
+    saveAskedSet(level, set);
+}
+
+// เลือกข้อสอบ: เน้นข้อที่ยังไม่เคยถาม -> ถ้าไม่พอจึงล้างประวัติของคลังนี้แล้วเติมให้ครบ
+// เมื่อเลือกความยาก "ALL" จะกระจายข้อสอบจาก LOW/MEDIUM/HIGH ให้สมดุลกัน
+function pickFreshQuestions(pool, level, count) {
+    // 1) ตัดข้อซ้ำในคลัง (ประโยคเดียวกันที่อยู่หลายแถว)
+    const seen = new Set();
+    const unique = [];
+    pool.forEach(q => {
+        const k = questionKey(q);
+        if (k && !seen.has(k)) { seen.add(k); unique.push(q); }
+    });
+
+    if (unique.length <= count) return shuffleArray(unique);
+
+    // 2) แยกข้อที่ยังไม่เคยถาม
+    const asked = loadAskedSet(level);
+    let fresh = unique.filter(q => !asked.has(questionKey(q)));
+
+    // 3) เลือกจากข้อใหม่ก่อน
+    let chosen = pickBalanced(fresh, count);
+
+    // 4) ถ้าข้อใหม่ไม่พอ: ล้างประวัติของคลังนี้ แล้วเติมจากข้อที่เหลือ (ไม่ซ้ำกับที่เลือกแล้ว)
+    if (chosen.length < count) {
+        const chosenKeys = new Set(chosen.map(questionKey));
+        unique.forEach(q => asked.delete(questionKey(q)));
+        saveAskedSet(level, asked);
+        const rest = unique.filter(q => !chosenKeys.has(questionKey(q)));
+        chosen = chosen.concat(pickBalanced(rest, count - chosen.length));
+    }
+
+    // 5) สลับลำดับสุดท้ายอีกครั้ง
+    return shuffleArray(chosen);
+}
+
+// สุ่มแบบวนกลุ่มตามระดับความยาก (ถ้าไม่ใช่โหมด ALL ทุกข้อจะอยู่กลุ่มเดียวกันอยู่แล้ว)
+function pickBalanced(list, count) {
+    if (list.length <= count) return shuffleArray(list);
+
+    const buckets = {};
+    shuffleArray(list).forEach(q => {
+        const d = (q.difficulty || "OTHER").toString().toUpperCase();
+        (buckets[d] = buckets[d] || []).push(q);
+    });
+
+    const names = shuffleArray(Object.keys(buckets));
+    const out = [];
+    while (out.length < count) {
+        let added = false;
+        for (const n of names) {
+            if (buckets[n].length > 0 && out.length < count) {
+                out.push(buckets[n].pop());
+                added = true;
+            }
+        }
+        if (!added) break;
+    }
+    return out;
+}
+
 function prepareQuestions() {
     if (masterQuestions.length === 0) return;
 
@@ -1503,8 +1619,8 @@ function prepareQuestions() {
         }
     }
 
-    let shuffled = finalFiltered.sort(() => 0.5 - Math.random());
-    questions = shuffled.slice(0, adminConfig.questionCount);
+    // สุ่มแบบไม่ซ้ำ: ตัดข้อที่เคยถูกถามไปแล้วออกก่อน + สุ่มด้วย Fisher-Yates + กระจายระดับความยาก
+    questions = pickFreshQuestions(finalFiltered, selectedLevel, adminConfig.questionCount);
     currentQuestion = 0;
     totalScore = 0;
     passCount = 0;
@@ -1579,6 +1695,11 @@ function nextQuestion(){
     }
     
     isTestingPhase = false; // ปิดสถานะป้องกันระหว่างสลับข้อ
+
+    // โหมดฝึกฝนเห็นประโยคตั้งแต่โหลดข้อ ถ้ากดข้ามก็นับว่าเคยเห็นแล้ว
+    if (adminConfig.cancelRequirement && questions[currentQuestion]) {
+        markQuestionAsked(questions[currentQuestion]);
+    }
 
     currentQuestion++;
     if(currentQuestion >= questions.length){
