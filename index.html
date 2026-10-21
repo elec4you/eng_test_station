@@ -99,11 +99,6 @@ h1 { margin:0; font-size:42px; font-family:'Orbitron',sans-serif; letter-spacing
 .login-box { margin-bottom:12px; }
 .login-box input { width:100%; padding:16px; border-radius:18px; border:1px solid rgba(255,255,255,0.12); background:rgba(7,12,30,0.75); color:white; font-size:18px; outline:none; transition:0.3s; }
 .login-box input:focus { border-color: var(--cyan); box-shadow: 0 0 15px rgba(53,216,255,0.3); }
-.login-box input.name-required { border-color: var(--red); box-shadow: 0 0 18px rgba(255,77,109,0.5); animation: nameShake 0.4s; }
-.login-box input:read-only { opacity: 0.65; }
-.name-hint { margin-top: 6px; padding-left: 8px; font-size: 13px; color: var(--muted); }
-.name-hint.warn { color: var(--red); font-weight: bold; }
-@keyframes nameShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
 
 /* LEVEL SELECTOR */
 .level-box { margin-bottom:12px; padding: 16px; border-radius: 18px; display: flex; flex-direction: column; gap: 8px;}
@@ -424,8 +419,7 @@ input:checked + .slider:before { transform: translateX(21px); }
     </div>
 
     <div class="login-box">
-        <input type="text" id="studentName" placeholder="กรอกชื่อผู้เข้าทดสอบ (จำเป็น)" maxlength="40" autocomplete="name" oninput="onNameInput()" />
-        <div class="name-hint" id="nameHint">* โหมดรับรางวัลต้องกรอกชื่อก่อนเริ่ม เพื่อบันทึกคะแนนลงตารางอันดับ</div>
+        <input type="text" id="studentName" placeholder="กรอกชื่อผู้เข้าทดสอบ" />
     </div>
 
     <!-- 📚 LEVEL SELECTOR -->
@@ -741,35 +735,18 @@ const audioPass = new Audio('https://actions.google.com/sounds/v1/cartoon/clown_
 const audioFail = new Audio('https://actions.google.com/sounds/v1/cartoon/slip_and_crash.ogg'); 
 const cheatAudio = new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg'); // เสียงเตือน Anti-Cheat
 
-// URL ที่ได้จากการ Deploy Google Apps Script ในขั้นตอนที่ 1
-const FIREBASE_CONFIG_URL = "https://script.google.com/macros/s/AKfycbxz5Rfjx7TqbNgu0TqTTeNtJpQZTl6QY1KWUBdKfSnjv5MFKnxgO2jjYfk2J3s7vibkFw/exec";
+const firebaseConfig = {
+    apiKey: "AIzaSyBK9hqf4TBb_ISgEtE5Qu4AjmGHZ5zhShk",
+    authDomain: "engteststation.firebaseapp.com",
+    databaseURL: "https://engteststation-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "engteststation",
+    storageBucket: "engteststation.firebasestorage.app",
+    messagingSenderId: "719237352141",
+    appId: "1:719237352141:web:04359357c9646c5bcd3784"
+};
 
-// สร้างตัวแปร Global สำหรับ Firebase Database เพื่อให้ฟังก์ชันอื่นเรียกใช้ได้
-let db;
-
-async function initFirebase() {
-    try {
-        const response = await fetch(FIREBASE_CONFIG_URL);
-        const firebaseConfig = await response.json();
-        
-        // กำหนดค่าเริ่มต้นให้กับ Firebase หลังจากดึง Config มาได้
-        firebase.initializeApp(firebaseConfig);
-        db = firebase.database();
-        console.log("Firebase initialized successfully via GAS.");
-        
-        // ย้ายการเรียกฟังก์ชัน Monitor ต่างๆ มาไว้ในนี้ 
-        // เพื่อให้แน่ใจว่า Firebase พร้อมใช้งานแล้ว
-        monitorMaintenance(); 
-        monitorAdminSettings(); 
-        monitorMachine(); 
-        monitorStock(); 
-        monitorRewards();
-        updateNameFieldForMode();
-    } catch (error) {
-        console.error("Error fetching Firebase config:", error);
-        alert("ไม่สามารถเชื่อมต่อระบบฐานข้อมูลได้ กรุณาลองรีเฟรชหน้าจอ");
-    }
-}
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
 let masterQuestions = []; 
 let questions = [];       
@@ -784,11 +761,6 @@ let isRunning = false;
 let isTestingPhase = false; // ตัวแปรคอยจับว่าเข้าสู่ขั้นตอนการอ่านข้อสอบอยู่หรือไม่ (สำหรับ Anti-cheat)
 let isAdminLoggedIn = false;
 let currentStock = { slot1: 0, slot2: 0 };
-
-// ---- บังคับกรอกชื่อในโหมดรับรางวัล ----
-let testStudentName = "";              // ชื่อที่ล็อกไว้ตลอดรอบทดสอบ (ใช้บันทึกคะแนนและออก OTP)
-const MIN_NAME_LENGTH = 2;             // ความยาวชื่อขั้นต่ำ
-const CLEAR_NAME_AFTER_TEST = false;   // true = ล้างช่องชื่อหลังจบรอบ (เหมาะกับเครื่อง Kiosk ที่หลายคนใช้ร่วมกัน)
 let currentMachineStatus = 'ready'; 
 
 let nextQuestionTimer = null;
@@ -961,7 +933,6 @@ function startSpeechCountdown(seconds) {
 
 function startRecognition() {
     if (isRunning) return;
-    if (!ensureStudentName()) return;   // โหมดรับรางวัลต้องมีชื่อก่อนเริ่ม
     
     const currentSentence = questions[currentQuestion].english;
     const timing = calculateDynamicTime(currentSentence);
@@ -1094,13 +1065,9 @@ function confirmInitialLevel() {
 }
 
 window.onload = async () => {
-    // 1. เริ่มต้น Firebase ผ่าน GAS ก่อน
-    await initFirebase();
-
-    // 2. โค้ดเดิมที่เหลือเกี่ยวกับการจัดการ SpeechRecognition...
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-        alert("เบราว์เซอร์ของคุณไม่รองรับระบบแยกแยะเสียง กรุณาเปิดด้วย Google Chrome หรือ Safari");
+        alert("เบราว์เซอร์ของคุณไม่รองรับระบบแยกแยะเสียง กรุณาเปิดด้วย Google Chrome");
         return;
     }
 
@@ -1190,7 +1157,12 @@ window.onload = async () => {
     };
 
     setupMobileAdminTrigger();
+    monitorMaintenance(); 
+    monitorAdminSettings(); 
     showInitialPopup(); 
+    monitorMachine(); 
+    monitorStock(); 
+    monitorRewards(); 
 };
 
 // ==========================================
@@ -1262,65 +1234,6 @@ function uploadImage(slot) {
     reader.readAsDataURL(file);
 }
 
-// ==========================================
-// 🧑 ระบบบังคับกรอกชื่อ (โหมดรับรางวัล)
-// ==========================================
-function normalizeName(raw) {
-    return (raw || "").replace(/\s+/g, " ").trim();
-}
-
-function updateNameFieldForMode() {
-    const input = document.getElementById("studentName");
-    const hint = document.getElementById("nameHint");
-    if (!input || !hint) return;
-    const required = !adminConfig.cancelRequirement;
-    input.placeholder = required ? "กรอกชื่อผู้เข้าทดสอบ (จำเป็น)" : "กรอกชื่อผู้เข้าทดสอบ (ไม่บังคับ)";
-    hint.style.display = required ? "block" : "none";
-    hint.classList.remove("warn");
-    input.classList.remove("name-required");
-}
-
-function onNameInput() {
-    document.getElementById("studentName").classList.remove("name-required");
-    document.getElementById("nameHint").classList.remove("warn");
-}
-
-function requireStudentName() {
-    const input = document.getElementById("studentName");
-    input.classList.remove("name-required");
-    void input.offsetWidth;                       // รีสตาร์ทแอนิเมชันสั่น
-    input.classList.add("name-required");
-    document.getElementById("nameHint").classList.add("warn");
-    document.getElementById("status").innerHTML = "⚠️ กรุณากรอกชื่อก่อนเริ่มทดสอบรับรางวัล";
-    document.getElementById("status").className = "status fail";
-    input.scrollIntoView({ behavior: "smooth", block: "center" });
-    input.focus();
-}
-
-// คืน true เมื่อผ่านเงื่อนไขชื่อ (โหมดฝึกฝนผ่านเสมอ)
-function ensureStudentName() {
-    if (adminConfig.cancelRequirement) return true;
-    if (testStudentName) return true;
-    const input = document.getElementById("studentName");
-    const name = normalizeName(input.value);
-    if (name.length < MIN_NAME_LENGTH) {
-        requireStudentName();
-        return false;
-    }
-    testStudentName = name;
-    input.value = name;
-    input.readOnly = true;                        // ล็อกชื่อตลอดรอบทดสอบ
-    onNameInput();
-    return true;
-}
-
-function unlockStudentName(clearField) {
-    const input = document.getElementById("studentName");
-    testStudentName = "";
-    input.readOnly = false;
-    if (clearField) input.value = "";
-}
-
 function selectUserMode(mode) {
     if (isRunning || isTestRunning) {
         alert("⚠️ กรุณารอให้จบการทดสอบหรือฝึกซ้อมรอบปัจจุบันก่อนเปลี่ยนโหมดครับ");
@@ -1339,7 +1252,6 @@ function selectUserMode(mode) {
         btnReward.classList.add("active");
         btnPractice.classList.remove("active");
     }
-    updateNameFieldForMode();
 
     if (questions.length > 0) prepareQuestions();
 }
@@ -1475,7 +1387,6 @@ function prepareQuestions() {
 
     isTestRunning = true;
     isTestingPhase = false; // ยังไม่เข้าหน้าคำถาม
-    unlockStudentName(false); // เริ่มรอบใหม่ ปลดล็อกช่องชื่อ
 
     const selectedLevel = adminConfig.forceLevelControl 
                           ? adminConfig.forcedLevel 
@@ -1556,11 +1467,6 @@ function loadQuestion(index){
 }
 
 function nextQuestion(){
-    // กันการกดข้ามข้อจนจบรอบโดยไม่กรอกชื่อ
-    if (!adminConfig.cancelRequirement && !testStudentName) {
-        requireStudentName();
-        return;
-    }
     clearInterval(displayInterval); 
     clearInterval(speechCountdownInterval);
     clearTimeout(nextQuestionTimer);
@@ -1625,22 +1531,22 @@ function monitorMachine() {
 
 function monitorStock() {
     db.ref('machine/stock').on('value', snap => {
-        const stock = snap.val() || {};
-        currentStock.slot1 = Number(stock.slot1) || 0;
-        currentStock.slot2 = Number(stock.slot2) || 0;
-        document.getElementById("slot1StockUI").innerText = currentStock.slot1;
-        document.getElementById("slot2StockUI").innerText = currentStock.slot2;
-        document.getElementById("rewardStock1UI").innerText = currentStock.slot1;
-        document.getElementById("rewardStock2UI").innerText = currentStock.slot2;
+        const stock = snap.val();
+        if(stock) {
+            currentStock.slot1 = stock.slot1 || 0;
+            currentStock.slot2 = stock.slot2 || 0;
+            document.getElementById("slot1StockUI").innerText = currentStock.slot1;
+            document.getElementById("slot2StockUI").innerText = currentStock.slot2;
+            document.getElementById("rewardStock1UI").innerText = currentStock.slot1;
+            document.getElementById("rewardStock2UI").innerText = currentStock.slot2;
+        }
     });
 }
 
 function updateStock(slot, amount) {
-    // ใช้ transaction: บวก/ลบจากค่าล่าสุดบนเซิร์ฟเวอร์เสมอ ไม่ทับกับตู้ที่เพิ่งจ่ายรางวัล
-    db.ref(`machine/stock/${slot}`).transaction(cur => {
-        const v = (Number(cur) || 0) + amount;
-        return v < 0 ? 0 : v;
-    }).catch(err => alert("❌ ปรับสต๊อกไม่สำเร็จ: " + err));
+    let newVal = currentStock[slot] + amount;
+    if(newVal < 0) newVal = 0;
+    db.ref(`machine/stock/${slot}`).set(newVal);
 }
 
 function setSystemStatus(status) {
@@ -1714,19 +1620,7 @@ function evaluateFinalResult() {
     document.getElementById("status").innerHTML = "สรุปผลสอบ";
     document.getElementById("status").className = "status pass";
     
-    // โหมดรับรางวัลใช้ชื่อที่ล็อกไว้ตอนเริ่ม / โหมดฝึกฝนใช้ชื่อในช่อง (ถ้าไม่กรอกจะไม่ระบุชื่อ)
-    if (!adminConfig.cancelRequirement && !testStudentName) {
-        document.getElementById("status").innerHTML = "⚠️ ไม่พบชื่อผู้ทดสอบ ไม่บันทึกคะแนน กรุณากรอกชื่อแล้วเริ่มรอบใหม่";
-        document.getElementById("status").className = "status fail";
-        const sb = document.getElementById("startBtn");
-        sb.disabled = false;
-        sb.innerHTML = "🔄 เริ่มทำข้อสอบรอบใหม่";
-        sb.onclick = prepareQuestions;
-        return;
-    }
-    const sName = (!adminConfig.cancelRequirement
-        ? testStudentName
-        : normalizeName(document.getElementById("studentName").value)) || "ผู้ทดสอบไม่ระบุชื่อ";
+    const sName = document.getElementById("studentName").value.trim() || "ผู้ทดสอบไม่ระบุชื่อ";
     
     try {
         fetch(GOOGLE_SCRIPT_URL, {
@@ -1759,8 +1653,6 @@ function evaluateFinalResult() {
         }
         document.getElementById("heardText").innerHTML = `ตอบผ่านทั้งหมด: ${passCount} / ${questions.length} ข้อ (คะแนนรวม: ${totalScore})`;
     }
-
-    unlockStudentName(CLEAR_NAME_AFTER_TEST);   // จบรอบ ปลดล็อกช่องชื่อ
 
     // 🔄 เปิดปุ่มให้ User กดเริ่มสอบรอบใหม่ด้วยตนเอง
     const startBtn = document.getElementById("startBtn");
