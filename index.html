@@ -735,10 +735,126 @@ const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyoo5FbqReEwF
 const ADMIN_PASSWORD = "1234"; 
 const GAS_QUESTION_URL = "https://script.google.com/macros/s/AKfycbyoo5FbqReEwFxYecwWZANl65I2u45wUZ0oq5MRl162mscLZRK7CZ1p22nt3CQP86_W/exec";
 
+// ==========================================
+// 🔊 ระบบเสียง (v21)
+// ==========================================
+const START_CUE_ENABLED = true;   // เสียงเตือน "ติ๊ง-ติ๊ง" ก่อนเปิดไมค์และเริ่มจับเวลาพูด
+const CELEBRATION_FILE = "";      // ใส่ชื่อไฟล์เสียงฉลองของคุณเอง เช่น "celebrate.mp3" (วางข้าง index.html) ว่างไว้ = ใช้เสียงสังเคราะห์ + เสียงเชียร์
+
+const cheerAudio = new Audio('https://actions.google.com/sounds/v1/crowds/crowd_cheer.ogg');
+let audioCtx = null, celebMaster = null, customCelebAudio = null;
+
+// เสียงตอบ PASS/FAIL ถูกตัดออก (เสียงแตร/เสียงล้มดังเข้าไมค์ทำให้ AI รับเสียงผิด)
+function playPassSound() {}
+function playFailSound() {}
+
+function getAudioCtx() {
+    try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === "suspended") audioCtx.resume();
+    } catch (e) { audioCtx = null; }
+    return audioCtx;
+}
+
+// เสียงเตือนสั้นๆ ก่อนเริ่มพูด แล้วจึงเปิดไมค์ (รอเสียงจบก่อน ไมค์จะไม่ได้ยินเสียงนี้)
+function playStartCue() {
+    return new Promise(resolve => {
+        const ctx = START_CUE_ENABLED ? getAudioCtx() : null;
+        if (!ctx) return resolve();
+        const t0 = ctx.currentTime + 0.02;
+        [[880, 0, 0.12], [1320, 0.16, 0.18]].forEach(([f, d, len]) => {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = "sine"; o.frequency.value = f;
+            g.gain.setValueAtTime(0.0001, t0 + d);
+            g.gain.exponentialRampToValueAtTime(0.35, t0 + d + 0.02);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + len);
+            o.connect(g); g.connect(ctx.destination);
+            o.start(t0 + d); o.stop(t0 + d + len + 0.02);
+        });
+        setTimeout(resolve, 650);   // เสียงจบที่ ~0.35 วินาที เผื่อเสียงสะท้อนอีกเล็กน้อย
+    });
+}
+
+// 🎉 เสียงฉลอง: ปรบมือ + เสียงเชียร์ + หวีด/วิ้ว + กรี๊ด
+function playCelebration() {
+    stopCelebration();
+    if (CELEBRATION_FILE) {
+        customCelebAudio = new Audio(CELEBRATION_FILE);
+        customCelebAudio.play().catch(e => console.log(e));
+        return;
+    }
+    try { cheerAudio.currentTime = 0; } catch (e) {}
+    cheerAudio.play().catch(e => console.log(e));
+
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    const master = ctx.createGain();
+    master.gain.value = 0.9;
+    master.connect(ctx.destination);
+    celebMaster = master;
+    const t0 = ctx.currentTime + 0.05;
+
+    // 👏 ปรบมือ: เสียงรบกวนสั้นๆ หลายร้อยครั้ง เริ่มเบา ดังขึ้น แล้วค่อยซา
+    const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const nd = noise.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    const DUR = 4.0;
+    for (let i = 0; i < 260; i++) {
+        const x = Math.random(), t = t0 + DUR * x;
+        const env = 0.2 + 0.8 * Math.sin(Math.PI * x);
+        const src = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain();
+        src.buffer = noise;
+        bp.type = "bandpass"; bp.frequency.value = 1200 + Math.random() * 2200; bp.Q.value = 0.8;
+        g.gain.setValueAtTime(0.5 * env, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.05 + Math.random() * 0.04);
+        src.connect(bp); bp.connect(g); g.connect(master);
+        src.start(t, Math.random() * 0.8, 0.12);
+    }
+
+    // 🎵 หวีด/วิ้ว: เสียงไซน์สูงไหลขึ้น มีสั่นเล็กน้อย
+    [[0.2, 1400, 2900, 0.55], [0.9, 1800, 3300, 0.5], [1.6, 2000, 2600, 0.8], [2.4, 1500, 3100, 0.6]].forEach(([d, f1, f2, len]) => {
+        const o = ctx.createOscillator(), g = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
+        o.type = "sine";
+        o.frequency.setValueAtTime(f1, t0 + d);
+        o.frequency.exponentialRampToValueAtTime(f2, t0 + d + len * 0.7);
+        lfo.frequency.value = 7; lg.gain.value = 35;
+        lfo.connect(lg); lg.connect(o.frequency);
+        g.gain.setValueAtTime(0.0001, t0 + d);
+        g.gain.exponentialRampToValueAtTime(0.22, t0 + d + 0.05);
+        g.gain.setValueAtTime(0.22, t0 + d + len - 0.1);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + len);
+        o.connect(g); g.connect(master);
+        o.start(t0 + d); lfo.start(t0 + d);
+        o.stop(t0 + d + len + 0.05); lfo.stop(t0 + d + len + 0.05);
+    });
+
+    // 😆 กรี๊ด: เสียงแหลมสั้นๆ ผ่านฟิลเตอร์
+    [[0.5, 0.45], [1.3, 0.4], [2.1, 0.5]].forEach(([d, len]) => {
+        const o = ctx.createOscillator(), bp = ctx.createBiquadFilter(), g = ctx.createGain();
+        o.type = "sawtooth";
+        o.frequency.setValueAtTime(900, t0 + d);
+        o.frequency.exponentialRampToValueAtTime(1700, t0 + d + len * 0.6);
+        o.frequency.exponentialRampToValueAtTime(1300, t0 + d + len);
+        bp.type = "bandpass"; bp.frequency.value = 2400; bp.Q.value = 2;
+        g.gain.setValueAtTime(0.0001, t0 + d);
+        g.gain.exponentialRampToValueAtTime(0.14, t0 + d + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + len);
+        o.connect(bp); bp.connect(g); g.connect(master);
+        o.start(t0 + d); o.stop(t0 + d + len + 0.05);
+    });
+}
+
+function stopCelebration() {
+    try { cheerAudio.pause(); cheerAudio.currentTime = 0; } catch (e) {}
+    if (customCelebAudio) { customCelebAudio.pause(); customCelebAudio = null; }
+    if (celebMaster && audioCtx) {
+        const m = celebMaster; celebMaster = null;
+        try { m.gain.cancelScheduledValues(0); m.gain.setValueAtTime(0, audioCtx.currentTime); } catch (e) {}
+        setTimeout(() => { try { m.disconnect(); } catch (e) {} }, 100);
+    }
+}
+
 // Audio objects
-const applauseAudio = new Audio('https://actions.google.com/sounds/v1/crowds/crowd_cheer.ogg');
-const audioPass = new Audio('https://actions.google.com/sounds/v1/cartoon/clown_horn.ogg'); 
-const audioFail = new Audio('https://actions.google.com/sounds/v1/cartoon/slip_and_crash.ogg'); 
 const cheatAudio = new Audio('https://actions.google.com/sounds/v1/alarms/digital_watch_alarm_long.ogg'); // เสียงเตือน Anti-Cheat
 
 // URL ที่ได้จากการ Deploy Google Apps Script ในขั้นตอนที่ 1
@@ -963,6 +1079,8 @@ function startSpeechCountdown(seconds) {
 function startRecognition() {
     if (isRunning) return;
     if (!ensureStudentName()) return;   // โหมดรับรางวัลต้องมีชื่อก่อนเริ่ม
+    stopCelebration();                  // หยุดเสียงฉลองที่อาจค้างจากรอบก่อน (กันไมค์รับเสียง)
+    getAudioCtx();                      // ปลดล็อกระบบเสียงด้วยการกดปุ่มของผู้ใช้
     
     const currentSentence = questions[currentQuestion].english;
     const timing = calculateDynamicTime(currentSentence);
@@ -983,7 +1101,10 @@ function startRecognition() {
 
     renderSequentialText(currentSentence, timing.displayTime);
 
-    startMicDelayTimeout = setTimeout(() => {
+    startMicDelayTimeout = setTimeout(async () => {
+        stopSentenceAudio();                // กันเสียงอ่านประโยคตัวอย่างหลุดเข้าไมค์
+        await playStartCue();               // เสียงเตือน "เริ่มพูด" แล้วจึงเปิดไมค์และเริ่มจับเวลา
+        if (!isTestingPhase) return;        // ถูกยกเลิกระหว่างรอเสียงเตือน (เช่น ทุจริต/เริ่มรอบใหม่)
         isRunning = true;
         try {
             recognition.start();
@@ -1638,6 +1759,7 @@ function prepareQuestions() {
     isTestRunning = true;
     isTestingPhase = false; // ยังไม่เข้าหน้าคำถาม
     unlockStudentName(false); // เริ่มรอบใหม่ ปลดล็อกช่องชื่อ
+    stopCelebration();
 
     const selectedLevel = adminConfig.forceLevelControl 
                           ? adminConfig.forcedLevel 
@@ -1858,8 +1980,6 @@ function closeAdminModal() {
     document.getElementById("adminModal").style.display = "none"; 
 }
 
-function playPassSound() { audioPass.play().catch(e=>console.log(e)); }
-function playFailSound() { audioFail.play().catch(e=>console.log(e)); }
 
 // ความเร็วเสียงอ่าน (0.1 - 2.0, ค่าปกติ = 1.0) ปรับให้ช้าลงเหมาะกับผู้เรียนที่พื้นฐานอ่อน
 const TTS_RATE = 0.6;
@@ -1917,9 +2037,9 @@ function evaluateFinalResult() {
     // บันทึกชื่อ + คะแนนลง Google Sheet (ใช้ GET เหมือนเวอร์ชันแรกที่ใช้งานได้)
     saveToGoogleSheet(sName, totalScore, passCount, failCount);
 
+    if (passCount >= adminConfig.passRequirement) playCelebration();   // ผ่านเกณฑ์ (ได้ OTP ในโหมดรับรางวัล): ปรบมือ เชียร์ หวีด กรี๊ด
+
     if (passCount >= adminConfig.passRequirement && !adminConfig.cancelRequirement) {
-        applauseAudio.play().catch(e=>console.log(e));
-        
         const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
 
         db.ref('machine/otps/' + otpCode).set({
