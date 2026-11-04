@@ -739,6 +739,7 @@ const GAS_QUESTION_URL = "https://script.google.com/macros/s/AKfycbyoo5FbqReEwFx
 // 🔊 ระบบเสียง (v21)
 // ==========================================
 const START_CUE_ENABLED = true;   // เสียงเตือน "ติ๊ง-ติ๊ง" ก่อนเปิดไมค์และเริ่มจับเวลาพูด
+const ENCOURAGE_FILE = "ENCOURAGE.mp3";          // เสียงปลอบใจจากครู (เล่นเมื่อไม่ผ่านเกณฑ์) วางข้าง index.html ว่างไว้ = ไม่เล่นเสียง
 const CELEBRATION_FILE = "CELEBRATION.mp3";      // ใส่ชื่อไฟล์เสียงฉลองของคุณเอง เช่น "celebrate.mp3" (วางข้าง index.html) ว่างไว้ = ใช้เสียงสังเคราะห์ + เสียงเชียร์
 
 const cheerAudio = new Audio('https://actions.google.com/sounds/v1/crowds/crowd_cheer.ogg');
@@ -773,6 +774,14 @@ function playStartCue() {
         });
         setTimeout(resolve, 650);   // เสียงจบที่ ~0.35 วินาที เผื่อเสียงสะท้อนอีกเล็กน้อย
     });
+}
+
+// 💛 เสียงปลอบใจจากครู: เล่นเมื่อผู้เรียนไม่ผ่านเกณฑ์
+function playEncouragement() {
+    stopCelebration();
+    if (!ENCOURAGE_FILE) return;
+    customCelebAudio = new Audio(ENCOURAGE_FILE);
+    customCelebAudio.play().catch(e => console.log(e));
 }
 
 // 🎉 เสียงฉลอง: ปรบมือ + เสียงเชียร์ + หวีด/วิ้ว + กรี๊ด
@@ -2037,7 +2046,8 @@ function evaluateFinalResult() {
     // บันทึกชื่อ + คะแนนลง Google Sheet (ใช้ GET เหมือนเวอร์ชันแรกที่ใช้งานได้)
     saveToGoogleSheet(sName, totalScore, passCount, failCount);
 
-    if (passCount >= adminConfig.passRequirement) playCelebration();   // ผ่านเกณฑ์ (ได้ OTP ในโหมดรับรางวัล): ปรบมือ เชียร์ หวีด กรี๊ด
+    if (passCount >= adminConfig.passRequirement) playCelebration();
+    else playEncouragement();   // ผ่านเกณฑ์ (ได้ OTP ในโหมดรับรางวัล): ปรบมือ เชียร์ หวีด กรี๊ด
 
     if (passCount >= adminConfig.passRequirement && !adminConfig.cancelRequirement) {
         const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
