@@ -109,6 +109,12 @@ h1 { margin:0; font-size:42px; font-family:'Orbitron',sans-serif; letter-spacing
 .level-box { margin-bottom:12px; padding: 16px; border-radius: 18px; display: flex; flex-direction: column; gap: 8px;}
 .level-box select { width:100%; padding:16px; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background:rgba(7,12,30,0.75); color:white; font-size:16px; outline:none; cursor:pointer; font-family:'Prompt',sans-serif; transition:0.3s; }
 .level-box select:focus { border-color: var(--cyan); }
+.level-pending { display: none; flex-direction: column; gap: 8px; margin-top: 4px; }
+.level-pending.show { display: flex; animation: levelPop .25s ease; }
+.level-pending-note { font-size: 13px; color: var(--gold); text-align: left; line-height: 1.5; }
+.level-confirm-btn { width: 100%; padding: 14px; border: none; border-radius: 14px; cursor: pointer; font-family: 'Prompt', sans-serif; font-size: 17px; font-weight: 700; color: #07101f; background: linear-gradient(135deg, #1dff95, #35d8ff); box-shadow: 0 5px 22px rgba(29,255,149,0.35); transition: 0.3s; }
+.level-confirm-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(29,255,149,0.55); }
+@keyframes levelPop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 .level-box select option { background: #07101f; color: white; }
 
 /* ✨ USER MODE SELECTOR */
@@ -450,6 +456,10 @@ input:checked + .slider:before { transform: translateX(21px); }
             <option value="Vocational" selected>อาชีวศึกษา (Vocational)</option>
             <option value="General">บุคคลทั่วไป (General)</option>
         </select>
+        <div class="level-pending" id="levelPending">
+            <div class="level-pending-note" id="levelPendingNote">⚠️ ยังไม่ได้ยืนยัน</div>
+            <button class="level-confirm-btn" id="levelConfirmBtn" onclick="confirmLevelChange()">✅ ยืนยันการเลือกระดับ</button>
+        </div>
     </div>
 
     <!-- 📖 ปุ่มวิธีการใช้งานระบบ (ภาพจัดการโดย Admin) -->
@@ -1253,6 +1263,8 @@ function applyLevelControl() {
     if (adminConfig.forceLevelControl) {
         userContainer.style.display = "none";
         userSelect.value = adminConfig.forcedLevel;
+        appliedLevel = adminConfig.forcedLevel;
+        document.getElementById("levelPending").classList.remove("show");
 
         if (popup.style.display === "flex") {
             clearInterval(initialCountdownTimer);
@@ -1653,14 +1665,45 @@ function confirmAbandonRound() {
     return confirm("⚠️ คุณกำลังทดสอบรับรางวัลอยู่\nหากเปลี่ยนตอนนี้ คะแนนรอบนี้จะถูกยกเลิก\n\nต้องการเปลี่ยนต่อหรือไม่?");
 }
 
+// ระดับที่ใช้สุ่มข้อสอบอยู่จริง (เปลี่ยนเมื่อกด "ยืนยันการเลือกระดับ" เท่านั้น)
+let appliedLevel = null;
+const LEVEL_LABELS = { Primary: "ประถมศึกษา", Secondary: "มัธยมศึกษา", Vocational: "อาชีวศึกษา", General: "บุคคลทั่วไป" };
+
+// เลือกระดับใหม่ในช่อง -> ยังไม่สุ่มข้อสอบใหม่ แค่แสดงปุ่มยืนยัน (ถ้าเลือกกลับเป็นระดับเดิม ปุ่มจะหายไป)
 function onLevelChange() {
-    if (!confirmAbandonRound()) {
-        // คืนค่าระดับเดิมในช่องเลือก
-        const sel = document.getElementById("userLevel");
-        if (questions.length > 0 && questions[0].level) sel.value = questions[0].level;
+    refreshLevelPendingUI();
+}
+
+function refreshLevelPendingUI() {
+    const sel = document.getElementById("userLevel");
+    const box = document.getElementById("levelPending");
+    const pending = !!appliedLevel && sel.value !== appliedLevel;
+    box.classList.toggle("show", pending);
+    if (pending) {
+        document.getElementById("levelPendingNote").innerHTML =
+            "⚠️ ยังไม่ได้ยืนยัน — ตอนนี้ยังใช้ข้อสอบระดับ <b>" + (LEVEL_LABELS[appliedLevel] || appliedLevel) +
+            "</b> อยู่<br>กดปุ่มด้านล่างเพื่อเปลี่ยนเป็น <b>" + (LEVEL_LABELS[sel.value] || sel.value) + "</b>";
+    }
+}
+
+function confirmLevelChange() {
+    const sel = document.getElementById("userLevel");
+    if (adminConfig.forceLevelControl || sel.value === appliedLevel) {
+        refreshLevelPendingUI();
         return;
     }
-    prepareQuestions();
+    if (!confirmAbandonRound()) {
+        sel.value = appliedLevel;          // ผู้ใช้ไม่ยืนยัน -> คืนระดับเดิม
+        refreshLevelPendingUI();
+        return;
+    }
+    appliedLevel = sel.value;
+    refreshLevelPendingUI();               // ซ่อนปุ่มยืนยัน
+    if (masterQuestions.length > 0) {
+        prepareQuestions();                // หยุดรอบเดิม แล้วสุ่มข้อสอบใหม่ตามระดับที่เลือก
+    } else {
+        fetchQuestionsFromGAS();           // ยังไม่เคยโหลดคลังข้อสอบ -> โหลดแล้วสุ่มให้เอง
+    }
 }
 
 function selectUserMode(mode) {
@@ -1942,9 +1985,12 @@ function prepareQuestions() {
     unlockStudentName(false); // เริ่มรอบใหม่ ปลดล็อกช่องชื่อ
     stopCelebration();
 
+    // ใช้ระดับที่ "ยืนยันแล้ว" เท่านั้น (ครั้งแรกใช้ค่าในช่องเลือก) กันระดับที่ยังไม่ยืนยันมามีผลตอนสลับโหมด ฯลฯ
     const selectedLevel = adminConfig.forceLevelControl 
                           ? adminConfig.forcedLevel 
-                          : document.getElementById("userLevel").value;
+                          : (appliedLevel || document.getElementById("userLevel").value);
+    appliedLevel = selectedLevel;
+    if (!adminConfig.forceLevelControl) refreshLevelPendingUI();
 
     let levelFiltered = masterQuestions.filter(q => q.level === selectedLevel);
 
