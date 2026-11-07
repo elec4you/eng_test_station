@@ -180,6 +180,19 @@ h1 { margin:0; font-size:42px; font-family:'Orbitron',sans-serif; letter-spacing
     box-shadow: 0 5px 25px rgba(53, 216, 255, 0.4);
 }
 .btn-reward:hover { box-shadow: 0 8px 30px rgba(53, 216, 255, 0.6); }
+.btn-guide {
+    background: linear-gradient(135deg, #1dff95, #35d8ff);
+    box-shadow: 0 5px 25px rgba(29, 255, 149, 0.35);
+    margin-bottom: 15px;
+}
+.btn-guide:hover { box-shadow: 0 8px 30px rgba(29, 255, 149, 0.55); }
+
+/* GUIDE MODAL SPECIFIC */
+.guide-scroll { overflow: auto; max-height: 68vh; border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); -webkit-overflow-scrolling: touch; }
+.guide-scroll img { display: block; width: 100%; height: auto; cursor: zoom-in; }
+.guide-scroll img.zoomed { width: 220%; max-width: none; cursor: zoom-out; }
+.guide-empty { text-align: center; color: var(--muted); padding: 40px 15px; font-size: 16px; line-height: 1.7; }
+.guide-hint { text-align: center; color: var(--muted); font-size: 13px; margin-top: 10px; }
 
 .top-bar { display:grid; grid-template-columns:repeat(3,1fr); gap:15px; margin-bottom:20px; }
 .stat { padding:15px; border-radius:20px; position:relative; overflow:hidden; text-align:center; }
@@ -439,6 +452,11 @@ input:checked + .slider:before { transform: translateX(21px); }
         </select>
     </div>
 
+    <!-- 📖 ปุ่มวิธีการใช้งานระบบ (ภาพจัดการโดย Admin) -->
+    <button class="btn-main-action btn-guide" onclick="openGuideModal()">
+        📖 วิธีการใช้งานระบบ
+    </button>
+
     <!-- ✨ USER MODE SELECTOR -->
     <div class="mode-selector glass">
         <button class="mode-btn active" id="modeRewardBtn" onclick="selectUserMode('reward')">
@@ -510,6 +528,19 @@ input:checked + .slider:before { transform: translateX(21px); }
 
     <!-- 🔒 HIDDEN ADMIN TRIGGER (Double Click หรือคลิก 3 ครั้งสำหรับมือถือ) -->
     <div class="footer" id="footerAdminTrigger" ondblclick="openAdminModal()" title="Double click for Admin Panel">AI Reward Learning Machine © 2026</div>
+</div>
+
+<!-- 📖 Guide Modal Panel -->
+<div class="modal-overlay" id="guideModal">
+    <div class="modal-content" style="background:#0d1326; padding-top:40px; max-width:560px;">
+        <button class="close-modal" onclick="closeGuideModal()">✕</button>
+        <h2 style="text-align:center; color:var(--green); margin-top:0;">📖 วิธีการใช้งานระบบ</h2>
+        <div class="guide-scroll" id="guideScroll">
+            <div class="guide-empty" id="guideEmpty">ยังไม่มีภาพวิธีการใช้งาน<br>โปรดติดต่อผู้ดูแลระบบ</div>
+            <img id="guideImg" src="" alt="วิธีการใช้งานระบบ" style="display:none;" onclick="toggleGuideZoom()">
+        </div>
+        <div class="guide-hint" id="guideHint" style="display:none;">👆 แตะที่ภาพเพื่อขยาย / แตะอีกครั้งเพื่อย่อ</div>
+    </div>
 </div>
 
 <!-- 🎁 Reward Modal Panel -->
@@ -644,6 +675,19 @@ input:checked + .slider:before { transform: translateX(21px); }
                     </div>
                 </div>
                 <div style="font-size:12px; color:var(--muted); margin-top:10px;">* ระบบจะย่อขนาดและบันทึกภาพลงฐานข้อมูลอัตโนมัติ</div>
+            </div>
+
+            <!-- 📖 อัปโหลดภาพวิธีใช้งานระบบ -->
+            <div class="stock-control-container">
+                <div style="color: var(--green); font-weight: bold; margin-bottom: 15px; font-size: 16px; text-align: left;">📖 จัดการภาพวิธีใช้งานระบบ</div>
+                <div class="stock-item" style="flex-direction: column; align-items: flex-start; gap: 10px;">
+                    <div class="stock-label">อัปโหลดภาพวิธีใช้งานระบบ (1 ภาพ)</div>
+                    <div style="display:flex; gap:10px; width:100%;">
+                        <input type="file" id="adminImgGuide" accept="image/*" class="admin-input" style="padding: 8px; margin: 0; flex:1; font-size:12px;">
+                        <button class="admin-btn-action" style="width:auto; padding:8px 15px;" onclick="uploadGuideImage()">Upload</button>
+                    </div>
+                </div>
+                <div style="font-size:12px; color:var(--muted); margin-top:10px;">* ภาพใหม่จะแทนที่ภาพเดิม · ระบบย่อภาพให้กว้างไม่เกิน 1400px เพื่อให้ตัวหนังสืออ่านชัด</div>
             </div>
 
             <!-- ⚙️ การตั้งค่าระบบข้อสอบ -->
@@ -1350,13 +1394,83 @@ function openRewardModal() { document.getElementById("rewardModal").style.displa
 function closeRewardModal() { document.getElementById("rewardModal").style.display = "none"; }
 
 function monitorRewards() {
-    db.ref('machine/rewards').on('value', (snap) => {
-        const data = snap.val();
-        if (data) {
-            if (data.slot1) document.getElementById("rewardImg1").src = data.slot1;
-            if (data.slot2) document.getElementById("rewardImg2").src = data.slot2;
+    // ฟังแยกทีละ child (ภาพวิธีใช้งานมีขนาดใหญ่กว่า จะได้ไม่ถูกโหลดซ้ำทุกครั้งที่ภาพรางวัลเปลี่ยน)
+    db.ref('machine/rewards/slot1').on('value', (snap) => {
+        const v = snap.val();
+        if (v) document.getElementById("rewardImg1").src = v;
+    });
+    db.ref('machine/rewards/slot2').on('value', (snap) => {
+        const v = snap.val();
+        if (v) document.getElementById("rewardImg2").src = v;
+    });
+    monitorGuide();
+}
+
+// ==========================================
+// 📖 ระบบภาพวิธีการใช้งานระบบ (Guide)
+// ==========================================
+function openGuideModal() { document.getElementById("guideModal").style.display = "flex"; }
+function closeGuideModal() {
+    document.getElementById("guideModal").style.display = "none";
+    const img = document.getElementById("guideImg");
+    if (img) img.classList.remove("zoomed");
+}
+function toggleGuideZoom() { document.getElementById("guideImg").classList.toggle("zoomed"); }
+
+function monitorGuide() {
+    db.ref('machine/rewards/guide').on('value', (snap) => {
+        const v = snap.val();
+        const img = document.getElementById("guideImg");
+        const empty = document.getElementById("guideEmpty");
+        const hint = document.getElementById("guideHint");
+        if (v) {
+            img.src = v;
+            img.style.display = "block";
+            empty.style.display = "none";
+            hint.style.display = "block";
+        } else {
+            img.removeAttribute("src");
+            img.style.display = "none";
+            empty.style.display = "block";
+            hint.style.display = "none";
         }
     });
+}
+
+function uploadGuideImage() {
+    const file = document.getElementById('adminImgGuide').files[0];
+    if (!file) {
+        alert("กรุณาเลือกไฟล์ภาพวิธีใช้งานก่อนกด Upload ครับ");
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        const img = new Image();
+        img.onload = function() {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 1400;   // ภาพวิธีใช้งานมีตัวหนังสือ ต้องละเอียดกว่าภาพรางวัล (600px)
+            let scaleSize = MAX_WIDTH / img.width;
+            if (scaleSize > 1) scaleSize = 1;
+
+            canvas.width = Math.round(img.width * scaleSize);
+            canvas.height = Math.round(img.height * scaleSize);
+
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = "#ffffff";   // กันภาพ PNG โปร่งใสกลายเป็นพื้นดำตอนแปลงเป็น JPEG
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+
+            db.ref('machine/rewards/guide').set(dataUrl)
+                .then(() => alert("✅ อัปโหลดและบันทึกภาพวิธีใช้งานระบบเรียบร้อยแล้ว!"))
+                .catch(err => alert("❌ เกิดข้อผิดพลาดในการอัปโหลดภาพ: " + err));
+        };
+        img.onerror = function() { alert("❌ ไม่สามารถอ่านไฟล์ภาพนี้ได้ ลองใช้ไฟล์ JPG หรือ PNG ครับ"); };
+        img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
 }
 
 function uploadImage(slot) {
