@@ -530,6 +530,19 @@ input:checked + .slider:before { transform: translateX(21px); }
     <div class="footer" id="footerAdminTrigger" ondblclick="openAdminModal()" title="Double click for Admin Panel">AI Reward Learning Machine © 2026</div>
 </div>
 
+<!-- 🛠️ Admin Guide Modal Panel -->
+<div class="modal-overlay" id="adminGuideModal" style="z-index: 100001;">
+    <div class="modal-content" style="background:#0d1326; padding-top:40px; max-width:560px;">
+        <button class="close-modal" onclick="closeAdminGuideModal()">✕</button>
+        <h2 style="text-align:center; color:var(--gold); margin-top:0;">🛠️ วิธีดูแลระบบสำหรับ Admin</h2>
+        <div class="guide-scroll">
+            <div class="guide-empty" id="adminGuideEmpty">ยังไม่มีภาพวิธีดูแลระบบ<br>อัปโหลดได้ที่ Admin Panel</div>
+            <img id="adminGuideImg" src="" alt="วิธีดูแลระบบสำหรับ Admin" style="display:none;" onclick="this.classList.toggle('zoomed')">
+        </div>
+        <div class="guide-hint" id="adminGuideHint" style="display:none;">👆 แตะที่ภาพเพื่อขยาย / แตะอีกครั้งเพื่อย่อ</div>
+    </div>
+</div>
+
 <!-- 📖 Guide Modal Panel -->
 <div class="modal-overlay" id="guideModal">
     <div class="modal-content" style="background:#0d1326; padding-top:40px; max-width:560px;">
@@ -596,6 +609,9 @@ input:checked + .slider:before { transform: translateX(21px); }
         </div>
 
         <div id="adminControlGroup" class="admin-control-group">
+
+            <!-- 🛠️ ปุ่มดูวิธีดูแลระบบสำหรับ Admin -->
+            <button class="admin-btn-action" style="background: linear-gradient(135deg, #ffb347, #ffcc33); color:#07101f; margin-bottom:15px;" onclick="openAdminGuideModal()">🛠️ วิธีดูแลระบบสำหรับ Admin</button>
 
             <!-- 🛠️ ระบบแจ้งเตือน Maintenance -->
             <div class="stock-control-container" style="border-color: rgba(255, 77, 109, 0.4);">
@@ -688,6 +704,19 @@ input:checked + .slider:before { transform: translateX(21px); }
                     </div>
                 </div>
                 <div style="font-size:12px; color:var(--muted); margin-top:10px;">* ภาพใหม่จะแทนที่ภาพเดิม · ระบบย่อภาพให้กว้างไม่เกิน 1400px เพื่อให้ตัวหนังสืออ่านชัด</div>
+            </div>
+
+            <!-- 🛠️ อัปโหลดภาพวิธีดูแลระบบสำหรับ Admin -->
+            <div class="stock-control-container">
+                <div style="color: var(--gold); font-weight: bold; margin-bottom: 15px; font-size: 16px; text-align: left;">🛠️ จัดการภาพวิธีดูแลระบบ (Admin)</div>
+                <div class="stock-item" style="flex-direction: column; align-items: flex-start; gap: 10px;">
+                    <div class="stock-label">อัปโหลดภาพวิธีดูแลระบบ (1 ภาพ)</div>
+                    <div style="display:flex; gap:10px; width:100%;">
+                        <input type="file" id="adminImgAdminGuide" accept="image/*" class="admin-input" style="padding: 8px; margin: 0; flex:1; font-size:12px;">
+                        <button class="admin-btn-action" style="width:auto; padding:8px 15px;" onclick="uploadGuideImage('adminImgAdminGuide','machine/rewards/adminGuide','วิธีดูแลระบบ')">Upload</button>
+                    </div>
+                </div>
+                <div style="font-size:12px; color:var(--muted); margin-top:10px;">* ภาพนี้แสดงเฉพาะเมื่อ Admin กดปุ่ม "วิธีดูแลระบบสำหรับ Admin" (ผู้ใช้ทั่วไปไม่โหลดภาพนี้)</div>
             </div>
 
             <!-- ⚙️ การตั้งค่าระบบข้อสอบ -->
@@ -1417,6 +1446,32 @@ function closeGuideModal() {
 }
 function toggleGuideZoom() { document.getElementById("guideImg").classList.toggle("zoomed"); }
 
+function openAdminGuideModal() {
+    document.getElementById("adminGuideModal").style.display = "flex";
+    loadAdminGuide();
+}
+function closeAdminGuideModal() {
+    document.getElementById("adminGuideModal").style.display = "none";
+    document.getElementById("adminGuideImg").classList.remove("zoomed");
+}
+// โหลดภาพวิธีดูแลระบบเฉพาะตอน Admin เปิดดู (once) ไม่ฟังแบบ real-time กันผู้ใช้ทั่วไปโหลดภาพใหญ่โดยไม่จำเป็น
+function loadAdminGuide() {
+    if (!db) return;
+    db.ref('machine/rewards/adminGuide').once('value').then((snap) => {
+        const v = snap.val();
+        const img = document.getElementById("adminGuideImg");
+        const empty = document.getElementById("adminGuideEmpty");
+        const hint = document.getElementById("adminGuideHint");
+        if (v) {
+            img.src = v; img.style.display = "block";
+            empty.style.display = "none"; hint.style.display = "block";
+        } else {
+            img.removeAttribute("src"); img.style.display = "none";
+            empty.style.display = "block"; hint.style.display = "none";
+        }
+    }).catch(err => alert("❌ โหลดภาพวิธีดูแลระบบไม่สำเร็จ: " + err));
+}
+
 function monitorGuide() {
     db.ref('machine/rewards/guide').on('value', (snap) => {
         const v = snap.val();
@@ -1437,10 +1492,10 @@ function monitorGuide() {
     });
 }
 
-function uploadGuideImage() {
-    const file = document.getElementById('adminImgGuide').files[0];
+function uploadGuideImage(inputId = 'adminImgGuide', path = 'machine/rewards/guide', label = 'วิธีใช้งานระบบ') {
+    const file = document.getElementById(inputId).files[0];
     if (!file) {
-        alert("กรุณาเลือกไฟล์ภาพวิธีใช้งานก่อนกด Upload ครับ");
+        alert("กรุณาเลือกไฟล์ภาพ" + label + "ก่อนกด Upload ครับ");
         return;
     }
 
@@ -1463,8 +1518,11 @@ function uploadGuideImage() {
 
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
 
-            db.ref('machine/rewards/guide').set(dataUrl)
-                .then(() => alert("✅ อัปโหลดและบันทึกภาพวิธีใช้งานระบบเรียบร้อยแล้ว!"))
+            db.ref(path).set(dataUrl)
+                .then(() => {
+                    alert("✅ อัปโหลดและบันทึกภาพ" + label + "เรียบร้อยแล้ว!");
+                    if (path === 'machine/rewards/adminGuide') loadAdminGuide();
+                })
                 .catch(err => alert("❌ เกิดข้อผิดพลาดในการอัปโหลดภาพ: " + err));
         };
         img.onerror = function() { alert("❌ ไม่สามารถอ่านไฟล์ภาพนี้ได้ ลองใช้ไฟล์ JPG หรือ PNG ครับ"); };
