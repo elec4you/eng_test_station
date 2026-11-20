@@ -531,8 +531,8 @@ input:checked + .slider:before { transform: translateX(21px); }
 
     <div class="teacher-box glass">
         <div class="teacher-title">ผู้พัฒนาโครงการ</div>
-        นายปยุต  ชีวะกุลจรรยาและคณะ<br>
-        สาขาวิชาเทคโนโลยีธุรกิจดิจิทัล<br>
+        นางสาวฐรินดา  เหล่าเลิศและคณะ<br>
+        แผนกอิเล็กทรอนิกส์<br>
         วิทยาลัยสารพัดช่างศรีสะเกษ
     </div>
 
@@ -972,47 +972,11 @@ async function initFirebase() {
         monitorMachine(); 
         monitorStock(); 
         monitorRewards();
-        startOtpCleanup();   // 🧹 เริ่มระบบล้าง OTP หมดอายุอัตโนมัติ
         updateNameFieldForMode();
     } catch (error) {
         console.error("Error fetching Firebase config:", error);
         alert("ไม่สามารถเชื่อมต่อระบบฐานข้อมูลได้ กรุณาลองรีเฟรชหน้าจอ");
     }
-}
-
-// 🧹 ระบบล้าง OTP หมดอายุบน Firebase อัตโนมัติ
-const OTP_TTL_MS = 30 * 60 * 1000;              // OTP มีอายุ 30 นาที
-const OTP_CHECK_INTERVAL_MS = 5 * 60 * 1000;    // ตรวจและลบทุก 5 นาที (OTP จะถูกลบที่ ~30-35 นาที)
-let otpCleanupTimer = null;
-let serverTimeOffset = 0;                       // ชดเชยเวลานาฬิกาเครื่องกับเซิร์ฟเวอร์ Firebase
-
-function startOtpCleanup() {
-    db.ref('.info/serverTimeOffset').on('value', snap => { serverTimeOffset = snap.val() || 0; });
-    cleanupExpiredOtps();                        // ล้างทันทีตอนเปิดหน้าเว็บ
-    if (otpCleanupTimer) clearInterval(otpCleanupTimer);
-    otpCleanupTimer = setInterval(cleanupExpiredOtps, OTP_CHECK_INTERVAL_MS);
-}
-
-function cleanupExpiredOtps() {
-    if (!db) return;
-    const now = Date.now() + serverTimeOffset;
-    db.ref('machine/otps').once('value').then(snap => {
-        const updates = {};
-        let count = 0;
-        snap.forEach(child => {
-            const v = child.val();
-            const created = v && Number(v.createdAt);
-            // ลบ OTP ที่หมดอายุ และ OTP เก่าที่ไม่มี createdAt (ของเวอร์ชันก่อนหน้า)
-            if (!created || (now - created) >= OTP_TTL_MS) {
-                updates[child.key] = null;
-                count++;
-            }
-        });
-        if (count === 0) return;
-        return db.ref('machine/otps').update(updates).then(() => {
-            console.log("🧹 ลบ OTP หมดอายุแล้ว " + count + " รายการ");
-        });
-    }).catch(err => console.warn("ล้าง OTP ไม่สำเร็จ:", err));
 }
 
 let masterQuestions = []; 
@@ -2308,8 +2272,7 @@ function evaluateFinalResult() {
 
         db.ref('machine/otps/' + otpCode).set({
             valid: true,
-            userName: sName,
-            createdAt: firebase.database.ServerValue.TIMESTAMP   // ใช้คำนวณอายุ OTP
+            userName: sName
         });
 
         document.getElementById("status").innerHTML = "คุณผ่านเกณฑ์! 🎁";
